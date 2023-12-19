@@ -13,12 +13,22 @@ const fetchBlob = async (url) => {
   const response = await fetch(url);
   const blob = await response.blob();
   const base64 = await convertBlobToBase64(blob);
+  const filename =`record-${Date.now()}.webm`;
+  if(window.navigator.msSaveOrOpenBlob) {
+    window.navigator.msSaveBlob(blob, filename);
+  } else{
+    const elem = window.document.createElement('a');
+    elem.href = window.URL.createObjectURL(blob);
+    elem.download = filename;
+    document.body.appendChild(elem);
+    elem.click();
+    document.body.removeChild(elem);
+  }
   return base64;
 };
 
 // listen for messages from the service worker - start recording  - stop recording
 chrome.runtime.onMessage.addListener(function (request, sender) {
-  console.log("message received", request, sender);
 
   switch (request.type) {
     case "start-recording":
@@ -38,7 +48,6 @@ let recorder;
 let data = [];
 
 const stopRecording = () => {
-  console.log("stop recording", recorder?.state);
   if (recorder?.state === "recording") {
     recorder.stop();
     // stop all streams
@@ -55,8 +64,6 @@ const startRecording = async (focusedTabId) => {
       if (streamId === null) {
         return;
       }
-      // have stream id
-      console.log("stream id from desktop capture", streamId);
 
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
@@ -73,8 +80,6 @@ const startRecording = async (focusedTabId) => {
         },
       });
 
-      console.log("stream from desktop capture", stream);
-
       // get the microphone stream
       const microphone = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: false },
@@ -87,30 +92,21 @@ const startRecording = async (focusedTabId) => {
           microphone.getAudioTracks()[0],
         ]);
 
-        console.log("combined stream", combinedStream);
-
         recorder = new MediaRecorder(combinedStream, {
           mimeType: "video/webm",
         });
 
         // listen for data
         recorder.ondataavailable = (event) => {
-          console.log("data available", event);
           data.push(event.data);
         };
 
         // listen for when recording stops
         recorder.onstop = async () => {
-          console.log("recording stopped");
           // send the data to the service worker
           const blobFile = new Blob(data, { type: "video/webm" });
-          const base64 = await fetchBlob(URL.createObjectURL(blobFile));
-
-          // send message to service worker to open tab
-          console.log("send message to open tab", base64);
+          await fetchBlob(URL.createObjectURL(blobFile));
           window.close();
-
-          chrome.runtime.sendMessage({ type: "open-tab", base64 });
           data = [];
         };
 

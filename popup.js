@@ -4,7 +4,6 @@ const injectCamera = async () => {
   if (!tab) return;
 
   const tabId = tab[0].id;
-  console.log("POPUP - inject into tab", tabId);
   await chrome.scripting.executeScript({
     // content.js is the file that will be injected
     files: ["content.js"],
@@ -18,7 +17,6 @@ const removeCamera = async () => {
   if (!tab) return;
 
   const tabId = tab[0].id;
-  console.log("POPUP - inject into tab", tabId);
   await chrome.scripting.executeScript({
     // content.js is the file that will be injected
     func: () => {
@@ -35,13 +33,10 @@ const checkRecording = async () => {
   const recording = await chrome.storage.local.get(["recording", "type"]);
   const recordingStatus = recording.recording || false;
   const recordingType = recording.type || "";
-  console.log("POPUP - recording status", recordingStatus, recordingType);
   return [recordingStatus, recordingType];
 };
 
 const updateRecording = async (type) => {
-  console.log("POPUP - start recording", type);
-
   const recordingState = await checkRecording();
 
   if (recordingState[0] === true) {

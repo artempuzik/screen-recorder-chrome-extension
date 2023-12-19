@@ -3,13 +3,11 @@ const checkRecording = async () => {
   const recording = await chrome.storage.local.get(["recording", "type"]);
   const recordingStatus = recording.recording || false;
   const recordingType = recording.type || "";
-  console.log("WORKER - recording status", recordingStatus, recordingType);
   return [recordingStatus, recordingType];
 };
 
 // update recording state
 const updateRecording = async (state, type) => {
-  console.log("WORKER - update recording", type);
   chrome.storage.local.set({ recording: state, type });
 };
 
@@ -19,7 +17,6 @@ const injectCamera = async () => {
   if (!tab) return;
 
   const tabId = tab[0].id;
-  console.log("WORKER - inject into tab", tabId);
   await chrome.scripting.executeScript({
     // content.js is the file that will be injected
     files: ["content.js"],
@@ -33,7 +30,6 @@ const removeCamera = async () => {
   if (!tab) return;
 
   const tabId = tab[0].id;
-  console.log("WORKER - inject into tab", tabId);
   await chrome.scripting.executeScript({
     // content.js is the file that will be injected
     func: () => {
@@ -47,8 +43,6 @@ const removeCamera = async () => {
 
 // listen for changes to the focused / current tab
 chrome.tabs.onActivated.addListener(async (activeInfo) => {
-  console.log("WORKER - tab activated", activeInfo);
-
   // grab the tab
   const activeTab = await chrome.tabs.get(activeInfo.tabId);
   if (!activeTab) return;
@@ -66,39 +60,28 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
   // check if we are recording & if we are recording the scren
   const [recording, recordingType] = await checkRecording();
 
-  console.log("WORKER - recording check after tab change", {
-    recording,
-    recordingType,
-    tabUrl,
-  });
-
   if (recording && recordingType === "screen") {
     // inject the camera
-    injectCamera();
+    await injectCamera();
   } else {
     // remove the camera
-    removeCamera();
+    await removeCamera();
   }
 });
 
 const startRecording = async (type) => {
-  console.log("WORKER - start recording", type);
-  const currentstate = await checkRecording();
-  console.log("current state", currentstate);
-  updateRecording(true, type);
+  await updateRecording(true, type);
   // update the icon
   chrome.action.setIcon({ path: "icons/recording.png" });
   if (type === "screen") {
-    recordScreen();
+    await recordScreen();
   }
 };
 
 const stopRecording = async () => {
-  console.log("WORKER - stop recording");
-  updateRecording(false, "");
+  await updateRecording(false, "");
   // update the icon
   chrome.action.setIcon({ path: "icons/not-recording.png" });
-  recordTabState(false);
 };
 
 const recordScreen = async () => {
@@ -127,36 +110,9 @@ const recordScreen = async () => {
   }, 500);
 };
 
-const openTabWithVideo = async (message) => {
-  console.log("WORKER - request to open tab with video", message);
-
-  // that message will either have a url or base64 encoded video
-  const { url: videoUrl, base64 } = message;
-
-  if (!videoUrl && !base64) return;
-
-  // open tab
-  const url = chrome.runtime.getURL("video.html");
-  const newTab = await chrome.tabs.create({ url });
-
-  // send message to tab
-  setTimeout(() => {
-    chrome.tabs.sendMessage(newTab.id, {
-      type: "play-video",
-      videoUrl,
-      base64,
-    });
-  }, 500);
-};
-
 // add listender for messages
-chrome.runtime.onMessage.addListener(function (request, sender) {
-  console.log("WORKER - message received", request, sender);
-
+chrome.runtime.onMessage.addListener((request) => {
   switch (request.type) {
-    case "open-tab":
-      openTabWithVideo(request);
-      break;
     case "start-recording":
       startRecording(request.recordingType);
       break;
