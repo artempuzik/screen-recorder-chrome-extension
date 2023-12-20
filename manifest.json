@@ -7,9 +7,8 @@
   "action": {
     "default_icon": "icons/not-recording.png"
   },
-  "host_permissions": ["https://*/*", "http://*/*"],
   "background": {
     "service_worker": "service-worker.js"
   },
-  "permissions": ["tabCapture", "offscreen", "activeTab"]
+  "permissions": ["tabCapture", "offscreen"]
 }

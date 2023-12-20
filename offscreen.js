@@ -34,7 +34,7 @@ let recorder; // variable to hold the MediaRecorder instance
 
 async function startRecording(streamId) {
     if (recorder?.state === 'recording') {
-        throw new Error('Called startRecording while recording is in progress.');
+        return;
     }
 
     desktopStream = await navigator.mediaDevices.getUserMedia({
@@ -52,6 +52,7 @@ async function startRecording(streamId) {
         }
     });
     microphoneStream = await navigator.mediaDevices.getUserMedia({
+        audio: true,
         audio: {
             echoCancellation: true,
             autoGainControl: true,
