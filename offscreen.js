@@ -40,12 +40,6 @@ async function startRecording(streamId) {
 
     try {
             desktopStream = await navigator.mediaDevices.getUserMedia({
-                audio: {
-                    mandatory: {
-                        chromeMediaSource: 'tab',
-                        chromeMediaSourceId: streamId
-                    }
-                },
                 video: {
                     mandatory: {
                         chromeMediaSource: 'tab',
@@ -54,7 +48,6 @@ async function startRecording(streamId) {
                 }
             })
         } catch (error) {
-            isError = true;
             console.log(error)
         }
 
@@ -69,7 +62,7 @@ async function startRecording(streamId) {
         const audioContext = new AudioContext();
         const destination = audioContext.createMediaStreamDestination();
 
-        if(desktopStream) {
+        if(desktopStream.getAudioTracks().length) {
             const desktopAudioSource = audioContext.createMediaStreamSource(desktopStream);
             desktopAudioSource.connect(destination);
         }
