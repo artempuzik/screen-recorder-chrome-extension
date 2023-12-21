@@ -3,12 +3,22 @@
   "description": "Records the current tab in an offscreen document.",
   "version": "1",
   "manifest_version": 3,
-  "minimum_chrome_version": "116",
+  "permissions": [
+    "tabCapture",
+    "offscreen",
+    "storage"
+  ],
+  "host_permissions": ["https://*/*", "http://*/*"],
   "action": {
     "default_icon": "icons/not-recording.png"
   },
   "background": {
     "service_worker": "service-worker.js"
   },
-  "permissions": ["tabCapture", "offscreen"]
+  "web_accessible_resources": [
+    {
+      "resources": ["offscreen.html", "offscreen.js"],
+      "matches": ["https://*/*", "http://*/*"]
+    }
+  ]
 }

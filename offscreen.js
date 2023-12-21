@@ -31,83 +31,100 @@ let desktopStream; // variable to hold the desktop stream
 let microphoneStream; // variable to hold the microphone stream
 let data = []; // array to store recorded chunks
 let recorder; // variable to hold the MediaRecorder instance
+let isError = false;
 
 async function startRecording(streamId) {
     if (recorder?.state === 'recording') {
         return;
     }
 
-    desktopStream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-            mandatory: {
-                chromeMediaSource: 'tab',
-                chromeMediaSourceId: streamId
-            }
-        },
-        video: {
-            mandatory: {
-                chromeMediaSource: 'tab',
-                chromeMediaSourceId: streamId
-            }
+    try {
+            desktopStream = await navigator.mediaDevices.getUserMedia({
+                audio: {
+                    mandatory: {
+                        chromeMediaSource: 'tab',
+                        chromeMediaSourceId: streamId
+                    }
+                },
+                video: {
+                    mandatory: {
+                        chromeMediaSource: 'tab',
+                        chromeMediaSourceId: streamId
+                    }
+                }
+            })
+        } catch (error) {
+            isError = true;
+            console.log(error)
         }
-    });
-    microphoneStream = await navigator.mediaDevices.getUserMedia({
-        audio: true,
-        audio: {
-            echoCancellation: true,
-            autoGainControl: true,
-            noiseSuppression: true,
-            channelCount: 1,
-            sampleRate: 16000,
-            sampleSize: 16,
-            volume: 1
+
+        try {
+            microphoneStream = await navigator.mediaDevices.getUserMedia({
+                audio: { echoCancellation: false },
+            })
+        } catch (error) {
+            console.log(error)
         }
-    });
 
-    const audioContext = new AudioContext();
-    const microphoneSource = audioContext.createMediaStreamSource(microphoneStream);
+        const audioContext = new AudioContext();
+        const destination = audioContext.createMediaStreamDestination();
 
-    // Create a MediaStreamAudioDestinationNode
-    const destination = audioContext.createMediaStreamDestination();
-    const desktopAudioSource = audioContext.createMediaStreamSource(desktopStream);
-    desktopAudioSource.connect(destination);
-    microphoneSource.connect(destination);
+        if(desktopStream) {
+            const desktopAudioSource = audioContext.createMediaStreamSource(desktopStream);
+            desktopAudioSource.connect(destination);
+        }
 
-    // Combine the audio streams
-    const combinedAudioStream = destination.stream;
+        if(microphoneStream) {
+            const microphoneSource = audioContext.createMediaStreamSource(microphoneStream);
+            microphoneSource.connect(destination);
+        }
 
-    // Merge the audio and video streams
-    const combinedStream = new MediaStream();
-    combinedStream.addTrack(combinedAudioStream.getAudioTracks()[0]);
-    combinedStream.addTrack(desktopStream.getVideoTracks()[0]);
+        // Combine the audio streams
+        const combinedAudioStream = destination.stream;
 
-    // Create a MediaRecorder to record the combined stream
-    recorder = new MediaRecorder(combinedStream);
+        // Merge the audio and video streams
+        const combinedStream = new MediaStream();
+        combinedStream.addTrack(combinedAudioStream.getAudioTracks()[0]);
 
-    recorder.ondataavailable = (event) => {
-        data.push(event.data);
-    };
-    recorder.onstop = () => {
-        const blob = new Blob(data, { type: 'video/webm' });
-        fetchBlob(blob).catch(err => console.log(err))
-        recorder = undefined;
-        data = [];
-    };
-    recorder.start();
-    window.location.hash = 'recording';
+        if(desktopStream) {
+            combinedStream.addTrack(desktopStream.getVideoTracks()[0]);
+        }
+
+        // Create a MediaRecorder to record the combined stream
+        recorder = new MediaRecorder(combinedStream);
+
+        recorder.ondataavailable = (event) => {
+            data.push(event.data);
+        };
+        recorder.onstop = () => {
+            if(!isError) {
+                const blob = new Blob(data, { type: 'video/webm' });
+                fetchBlob(blob).catch(err => console.log(err))
+            }
+            isError = false;
+            recorder = undefined;
+            data = [];
+        };
+        isError = false;
+        recorder.start();
+        window.location.hash = 'recording';
 }
 
 async function stopRecording() {
-    if (desktopStream) {
-        desktopStream.getTracks().forEach((track) => track.stop());
-    }
+    try {
+        if (desktopStream) {
+            desktopStream.getTracks().forEach((track) => track.stop());
+        }
 
-    if (microphoneStream) {
-        microphoneStream.getTracks().forEach((track) => track.stop());
-    }
+        if (microphoneStream) {
+            microphoneStream.getTracks().forEach((track) => track.stop());
+        }
 
-    if (recorder && recorder.state !== 'inactive') {
-        recorder.stop();
+        if (recorder && recorder.state !== 'inactive') {
+            recorder.stop();
+        }
+        window.location.hash = '';
+    } catch (e) {
+        console.log(e)
     }
-    window.location.hash = '';
 }
