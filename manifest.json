@@ -6,7 +6,11 @@
   "permissions": [
     "tabCapture",
     "offscreen",
-    "storage"
+    "scripting",
+    "storage",
+    "activeTab",
+    "desktopCapture",
+    "tabs"
   ],
   "host_permissions": ["https://*/*", "http://*/*"],
   "action": {

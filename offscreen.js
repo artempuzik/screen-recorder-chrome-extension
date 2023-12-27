@@ -1,15 +1,21 @@
-const fetchBlob = async (blob) => {
-    const name =`record-${Date.now()}.webm`;
-    if(window.navigator.msSaveOrOpenBlob) {
-        window.navigator.msSaveBlob(blob, name);
-    } else{
-        const elem = window.document.createElement('a');
-        elem.href = window.URL.createObjectURL(blob);
-        elem.download = name;
-        document.body.appendChild(elem);
-        elem.click();
-        document.body.removeChild(elem);
-    }
+// const fetchBlob = async (blob) => {
+//     const name =`record-${Date.now()}.webm`;
+//     if(window.navigator.msSaveOrOpenBlob) {
+//         window.navigator.msSaveBlob(blob, name);
+//     } else{
+//         const elem = window.document.createElement('a');
+//         elem.href = window.URL.createObjectURL(blob);
+//         elem.download = name;
+//         document.body.appendChild(elem);
+//         elem.click();
+//         document.body.removeChild(elem);
+//     }
+// };
+
+const fetchBlobToWs = async (data) => {
+    const blobFile = new Blob(data, { type: "video/webm" });
+    const base64 = await fetchBlob(URL.createObjectURL(blobFile));
+
 };
 
 chrome.runtime.onMessage.addListener(async (message) => {
@@ -55,8 +61,10 @@ async function startRecording(streamId) {
             microphoneStream = await navigator.mediaDevices.getUserMedia({
                 audio: { echoCancellation: false },
             })
+            throw new Error('Microphone');
         } catch (error) {
             console.log(error)
+            openPinnedTabHandler();
         }
 
         const audioContext = new AudioContext();
@@ -72,10 +80,8 @@ async function startRecording(streamId) {
             microphoneSource.connect(destination);
         }
 
-        // Combine the audio streams
         const combinedAudioStream = destination.stream;
 
-        // Merge the audio and video streams
         const combinedStream = new MediaStream();
         combinedStream.addTrack(combinedAudioStream.getAudioTracks()[0]);
 
@@ -83,20 +89,42 @@ async function startRecording(streamId) {
             combinedStream.addTrack(desktopStream.getVideoTracks()[0]);
         }
 
-        // Create a MediaRecorder to record the combined stream
-        recorder = new MediaRecorder(combinedStream);
+        const socket = new WebSocket("ws://chromefeed.away.guru/video");
+
+        socket.addEventListener("open",function(event){
+            socket.send("Connected.....");
+        });
+
+        socket.addEventListener("error", function (error) {
+            console.error("WebSocket error:", error);
+        });
+
+        socket.addEventListener("close", function (event) {
+            console.log("WebSocket connection closed:", event);
+        });
+
+        recorder = new MediaRecorder(combinedStream, {
+            mimeType: 'video/webm;codecs=vp8,opus',
+        });
 
         recorder.ondataavailable = (event) => {
-            data.push(event.data);
-        };
-        recorder.onstop = () => {
-            if(!isError) {
-                const blob = new Blob(data, { type: 'video/webm' });
-                fetchBlob(blob).catch(err => console.log(err))
+            if (event.data.size > 0) {
+                const blob = new Blob([event.data], { type: 'video/webm' });
+                //socket.send(blob);
+                console.log(event.data)
             }
-            isError = false;
+        };
+
+        recorder.onerror = () => {
+            console.log("Error", arguments);
+            openPinnedTabHandler();
+        };
+
+        recorder.onstop = () => {
+            // const blob = new Blob(data, { type: 'video/webm' });
+            // fetchBlob(blob).catch(err => console.log(err))
             recorder = undefined;
-            data = [];
+            // data = [];
         };
         isError = false;
         recorder.start();
