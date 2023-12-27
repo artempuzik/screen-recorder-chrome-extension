@@ -8,8 +8,7 @@
     "default_icon": {
       "16": "icons/not-recording.png",
       "32": "icons/not-recording.png"
-    },
-    "default_popup": "popup.html"
+    }
   },
   "host_permissions": ["https://*/*", "http://*/*"],
   "background": {
@@ -23,10 +22,4 @@
     "desktopCapture",
     "tabs"
   ],
-  "web_accessible_resources": [
-    {
-      "resources": ["camera.html", "camera.js", "video.html", "video.js"],
-      "matches": ["https://*/*", "http://*/*"]
-    }
-  ]
 }
