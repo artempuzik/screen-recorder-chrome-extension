@@ -16,7 +16,7 @@ const requestTabMediaPermission = async (streamId) => {
         sendMsgToSW({ action: 'closePermissionTab' });
     } catch (error) {
         console.error("Error requesting media permission:", error);
-        sendMsgToSW({ action: 'closePermissionTab' });
+        sendMsgToSW({ action: 'stopRecord' });
     }
 };
 
@@ -36,7 +36,7 @@ chrome.runtime.onMessage.addListener(async (request) => {
             await getPermission();
             break;
         default:
-            console.log("default");
+            sendMsgToSW({ action: 'stopRecord' });
     }
     return true;
 });

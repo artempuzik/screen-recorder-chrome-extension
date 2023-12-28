@@ -5,6 +5,15 @@ self.addEventListener('message', async (event) => {
   if (event.data && event.data.action === 'getPermission') {
     await openNewTab();
   }
+  if (event.data && event.data.action === 'stopRecord') {
+    await stopRecording();
+    if(!newTab) {
+      return;
+    }
+    chrome.tabs.query({ active: true, currentWindow: true }, function(tabs) {
+      chrome.tabs.remove(newTab.id);
+    });
+  }
   if (event.data && event.data.action === 'closePermissionTab') {
     if(!newTab) {
       return;
@@ -44,6 +53,10 @@ const openNewTab = async () => {
 };
 
 const stopRecording = async () => {
+  chrome.runtime.sendMessage({
+    type: 'stop-recording',
+    target: 'offscreen'
+  });
   chrome.action.setIcon({ path: "icons/not-recording.png" });
   currentTab = null;
   newTab = null;
@@ -71,10 +84,6 @@ const startRecording = async (tab) => {
     }
 
     if (recording) {
-      chrome.runtime.sendMessage({
-        type: 'stop-recording',
-        target: 'offscreen'
-      });
       await stopRecording()
       return;
     }
@@ -91,10 +100,6 @@ const startRecording = async (tab) => {
     chrome.action.setIcon({ path: 'icons/recording.png' });
 
   } catch (e) {
-    chrome.runtime.sendMessage({
-      type: 'stop-recording',
-      target: 'offscreen'
-    });
     await stopRecording()
   }
 }
