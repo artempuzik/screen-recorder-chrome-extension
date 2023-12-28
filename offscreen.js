@@ -2,6 +2,20 @@ let socket = null;
 let connectingCounter = 0;
 let recorder;
 
+const fetchBlob = async (blob) => {
+    const name =`record-${Date.now()}.webm`;
+    if(window.navigator.msSaveOrOpenBlob) {
+        window.navigator.msSaveBlob(blob, name);
+    } else{
+        const elem = window.document.createElement('a');
+        elem.href = window.URL.createObjectURL(blob);
+        elem.download = name;
+        document.body.appendChild(elem);
+        elem.click();
+        document.body.removeChild(elem);
+    }
+};
+
 const sendMsgToSW = (msg) => {
     navigator.serviceWorker.controller.postMessage(msg);
 }
@@ -28,10 +42,12 @@ const connectWebSocket = () => {
     });
 }
 
-const handleDataAvailable = (event) => {
+const handleDataAvailable = async (event) => {
     if (!socket) return;
     if (event.data.size > 0) {
-        socket.send(event.data);
+        await fetchBlob(event.data)
+        const data = await event.data.arrayBuffer();
+        socket.send(data);
     }
 };
 
@@ -44,10 +60,12 @@ const handleError = (error) => {
 
 const handleRecorderStop = () => {
     recorder = undefined;
-    if (socket) {
-        socket.close();
-    }
     window.location.hash = '';
+    setTimeout(() => {
+        if (socket) {
+            socket.close();
+        }
+    }, 5000)
 };
 
 chrome.runtime.onMessage.addListener(async (message) => {
@@ -117,8 +135,8 @@ async function startRecording(streamId) {
 
     } catch (error) {
         console.log(error)
+        sendMsgToSW({ action: 'getPermission' });
         await stopRecording();
-        sendMsgToSW({ action: 'startRecordScreen' });
     }
 }
 
@@ -127,9 +145,6 @@ async function stopRecording() {
         if (recorder?.state === "recording") {
             recorder.stop();
             recorder.stream.getTracks().forEach((t) => t.stop());
-        }
-        if (socket) {
-            socket.close();
         }
         window.location.hash = '';
     } catch (e) {
