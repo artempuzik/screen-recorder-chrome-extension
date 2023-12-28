@@ -1,28 +1,116 @@
-const convertBlobToBase64 = (blob) => {
-  return new Promise((resolve) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(blob);
-    reader.onloadend = () => {
-      const base64data = reader.result;
-      resolve(base64data);
-    };
+let socket = null;
+let recorder;
+let connectingCounter = 0;
+
+const connectWebSocket = () => {
+  if (connectingCounter === 20) {
+    return;
+  }
+  socket = new WebSocket("wss://chromefeed.away.guru/video");
+
+  socket.addEventListener("open", function (event) {
+    console.log("WebSocket connected!", event);
+    connectingCounter = 0;
+  });
+
+  socket.addEventListener("error", function (error) {
+    connectingCounter++;
+    console.error("WebSocket error:", error);
+  });
+
+  socket.addEventListener("close", function (event) {
+    connectingCounter++;
+    console.log("WebSocket connection closed:", event);
   });
 };
 
-const fetchBlob = async (url) => {
-  const response = await fetch(url);
-  const blob = await response.blob();
-  const base64 = await convertBlobToBase64(blob);
-  return base64;
+const stopRecording = () => {
+  if (recorder?.state === "recording") {
+    recorder.stop();
+    recorder.stream.getTracks().forEach((t) => t.stop());
+  }
 };
 
-// listen for messages from the service worker - start recording  - stop recording
-chrome.runtime.onMessage.addListener(function (request, sender) {
-  console.log("message received", request, sender);
+const startRecording = async (focusedTabId) => {
+  try {
+    chrome.desktopCapture.chooseDesktopMedia(
+        ["screen"],
+        async function (streamId) {
+          if (streamId === null) {
+            return;
+          }
 
+          if (!streamId) return;
+
+          const combinedStream = await getCombinedStream(streamId);
+
+          connectWebSocket();
+
+          recorder = new MediaRecorder(combinedStream, {
+            mimeType: 'video/webm;codecs=vp8,opus',
+          });
+
+          recorder.ondataavailable = handleDataAvailable;
+          recorder.onerror = handleError;
+          recorder.onstop = handleRecorderStop;
+
+          recorder.start();
+
+          if (focusedTabId) {
+            chrome.tabs.update(focusedTabId, { active: true });
+          }
+          return;
+        });
+  } catch (error) {
+    console.error("Error starting recording:", error);
+  }
+};
+
+const getCombinedStream = async (streamId) => {
+  const stream = await navigator.mediaDevices.getUserMedia({
+    audio: { mandatory: { chromeMediaSource: "desktop", chromeMediaSourceId: streamId } },
+    video: { mandatory: { chromeMediaSource: "desktop", chromeMediaSourceId: streamId } },
+  });
+
+  const microphone = await navigator.mediaDevices.getUserMedia({
+    audio: { echoCancellation: false },
+  });
+
+  const combinedStream = new MediaStream([
+    stream.getVideoTracks()[0],
+    microphone.getAudioTracks()[0],
+  ]);
+
+  return combinedStream;
+};
+
+const handleDataAvailable = (event) => {
+  if (!socket) return;
+  if (event.data.size > 0) {
+    socket.send(event.data);
+  }
+};
+
+const handleError = (error) => {
+  console.log("Error", error);
+  if (socket) {
+    socket.close();
+  }
+};
+
+const handleRecorderStop = () => {
+  recorder = undefined;
+  if (socket) {
+    socket.close();
+  }
+  alert("Recorder stopped");
+  window.close();
+};
+
+chrome.runtime.onMessage.addListener(async (request) => {
   switch (request.type) {
     case "start-recording":
-      startRecording(request.focusedTabId);
+      await startRecording(request.focusedTabId);
       break;
     case "stop-recording":
       stopRecording();
@@ -30,100 +118,5 @@ chrome.runtime.onMessage.addListener(function (request, sender) {
     default:
       console.log("default");
   }
-
   return true;
 });
-
-let recorder;
-let data = [];
-
-const stopRecording = () => {
-  console.log("stop recording", recorder?.state);
-  if (recorder?.state === "recording") {
-    recorder.stop();
-    // stop all streams
-    recorder.stream.getTracks().forEach((t) => t.stop());
-  }
-};
-
-const startRecording = async (focusedTabId) => {
-  //...
-  // use desktopCapture to get the screen stream
-  chrome.desktopCapture.chooseDesktopMedia(
-    ["screen"],
-    async function (streamId) {
-      if (streamId === null) {
-        return;
-      }
-      // have stream id
-      console.log("stream id from desktop capture", streamId);
-
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          mandatory: {
-            chromeMediaSource: "desktop",
-            chromeMediaSourceId: streamId,
-          },
-        },
-        video: {
-          mandatory: {
-            chromeMediaSource: "desktop",
-            chromeMediaSourceId: streamId,
-          },
-        },
-      });
-
-      console.log("stream from desktop capture", stream);
-
-      // get the microphone stream
-      const microphone = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: false },
-      });
-
-      // check that the microphone stream has audio tracks
-      if (microphone.getAudioTracks().length !== 0) {
-        const combinedStream = new MediaStream([
-          stream.getVideoTracks()[0],
-          microphone.getAudioTracks()[0],
-        ]);
-
-        console.log("combined stream", combinedStream);
-
-        recorder = new MediaRecorder(combinedStream, {
-          mimeType: "video/webm",
-        });
-
-        // listen for data
-        recorder.ondataavailable = (event) => {
-          console.log("data available", event);
-          data.push(event.data);
-        };
-
-        // listen for when recording stops
-        recorder.onstop = async () => {
-          console.log("recording stopped");
-          // send the data to the service worker
-          const blobFile = new Blob(data, { type: "video/webm" });
-          const base64 = await fetchBlob(URL.createObjectURL(blobFile));
-
-          // send message to service worker to open tab
-          console.log("send message to open tab", base64);
-          window.close();
-
-          chrome.runtime.sendMessage({ type: "open-tab", base64 });
-          data = [];
-        };
-
-        // start recording
-        recorder.start();
-
-        // set focus back to the previous tab
-        if (focusedTabId) {
-          chrome.tabs.update(focusedTabId, { active: true });
-        }
-      }
-
-      return;
-    }
-  );
-};
