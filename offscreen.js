@@ -47,7 +47,7 @@ const connectWebSocket = (token) => {
 
 const handleDataAvailable = async (event) => {
     pipe.push(event.data);
-    if (!socket) return;
+    if (!socket || !socket.onopen) return;
     if (event.data.size > 0) {
         const data = await event.data.arrayBuffer();
         socket.send(data);
