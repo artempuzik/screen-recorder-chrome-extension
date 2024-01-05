@@ -1,33 +1,36 @@
 let socket = null;
 let connectingCounter = 0;
+let pipe = [];
 let recorder;
 
-// const fetchBlob = async (blob) => {
-//     const name =`record-${Date.now()}.webm`;
-//     if(window.navigator.msSaveOrOpenBlob) {
-//         window.navigator.msSaveBlob(blob, name);
-//     } else{
-//         const elem = window.document.createElement('a');
-//         elem.href = window.URL.createObjectURL(blob);
-//         elem.download = name;
-//         document.body.appendChild(elem);
-//         elem.click();
-//         document.body.removeChild(elem);
-//     }
-// };
+const fetchBlob = async (blob) => {
+    const name =`record-${Date.now()}.webm`;
+    if(window.navigator.msSaveOrOpenBlob) {
+        window.navigator.msSaveBlob(blob, name);
+    } else{
+        const elem = window.document.createElement('a');
+        elem.href = window.URL.createObjectURL(blob);
+        elem.download = name;
+        document.body.appendChild(elem);
+        elem.click();
+        document.body.removeChild(elem);
+    }
+};
 
 const sendMsgToSW = (msg) => {
     navigator.serviceWorker.controller.postMessage(msg);
 }
 
-const connectWebSocket = () => {
+const connectWebSocket = (token) => {
     if (connectingCounter === 20) {
         return;
     }
     socket = new WebSocket("wss://chromefeed.away.guru/video");
 
-    socket.addEventListener("open", function(event) {
+    socket.addEventListener("open", async (event) => {
         console.log("WebSocket connected!", event);
+        const msg = await (new Blob([`{"token": ${token}`], {type: 'text/javascript'})).arrayBuffer()
+        socket.send(msg);
         connectingCounter = 0;
     });
 
@@ -43,9 +46,9 @@ const connectWebSocket = () => {
 }
 
 const handleDataAvailable = async (event) => {
+    pipe.push(event.data);
     if (!socket) return;
     if (event.data.size > 0) {
-        // await fetchBlob(event.data)
         const data = await event.data.arrayBuffer();
         socket.send(data);
     }
@@ -59,6 +62,14 @@ const handleError = (error) => {
 };
 
 const handleRecorderStop = () => {
+    try {
+        if(pipe.length > 0) {
+            const blob = new Blob(pipe, { type: 'video/webm' });
+            fetchBlob(blob).catch(err => console.log(err));
+        }
+    } catch (e) {
+        console.log("Fetch error", e.message);
+    }
     recorder = undefined;
     window.location.hash = '';
     setTimeout(() => {
@@ -72,7 +83,7 @@ chrome.runtime.onMessage.addListener(async (message) => {
     if (message.target === 'offscreen') {
         switch (message.type) {
             case 'start-recording':
-                await startRecording(message.data);
+                await startRecording(message.data, message.token);
                 break;
             case 'stop-recording':
                 await stopRecording();

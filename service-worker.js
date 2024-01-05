@@ -1,6 +1,13 @@
-
 let currentTab = null;
 let newTab = null;
+let authTab = null;
+let token = null;
+
+const urls = [
+    'zoom',
+    'meet.google',
+    'teams'
+]
 self.addEventListener('message', async (event) => {
   if (event.data && event.data.action === 'getPermission') {
     await openNewTab();
@@ -26,16 +33,45 @@ self.addEventListener('message', async (event) => {
       });
     });
   }
+  if (event.data && event.data.action === 'alert') {
+    await stopRecording();
+    if(!newTab) {
+      return;
+    }
+    chrome.tabs.query({ active: true, currentWindow: true }, function(tabs) {
+      chrome.tabs.remove(newTab.id);
+    });
+  }
+  if (event.data && event.data.action === 'set-token') {
+    if(event.data.token) {
+      token = event.data.token;
+      try {
+        if(authTab) {
+          chrome.tabs.query({ active: true, currentWindow: true }, function(tabs) {
+            chrome.tabs.remove(authTab.id, async () => {
+              if(currentTab) {
+                await startRecording(currentTab);
+              }
+            });
+          });
+        }
+      } catch (e) {
+        console.log(e)
+      }
+    } else {
+      await openAuthTab()
+    }
+  }
 });
 
 const openNewTab = async () => {
     const desktopRecordPath = chrome.runtime.getURL("permission.html");
-    const currentTab = await chrome.tabs.query({
+    const tab = await chrome.tabs.query({
       active: true,
       currentWindow: true,
     });
-    if (currentTab && currentTab.length > 0) {
-      const currentTabId = currentTab[0].id;
+    if (tab && tab.length > 0) {
+      const currentTabId = tab[0].id;
 
       newTab = await chrome.tabs.create({
         url: desktopRecordPath,
@@ -52,17 +88,41 @@ const openNewTab = async () => {
     }
 };
 
+const openAuthTab = async () => {
+  const desktopRecordPath = chrome.runtime.getURL("auth.html");
+  const tab = await chrome.tabs.query({
+    active: true,
+    currentWindow: true,
+  });
+  if (tab && tab.length > 0) {
+    const currentTabId = tab[0].id;
+
+    authTab = await chrome.tabs.create({
+      url: desktopRecordPath,
+      pinned: true,
+      active: true,
+      index: 0,
+    });
+  }
+}
+
 const stopRecording = async () => {
   chrome.runtime.sendMessage({
     type: 'stop-recording',
     target: 'offscreen'
   });
   chrome.action.setIcon({ path: "icons/not-recording.png" });
-  currentTab = null;
   newTab = null;
+  authTab = null;
+  currentTab = null;
 };
 
-// <--- OFFSET --->
+const openFile = async (files, tab) => {
+  await chrome.scripting.executeScript({
+    files: [...files],
+    target: { tabId: tab.id },
+  });
+}
 
 const startRecording = async (tab) => {
   try {
@@ -95,6 +155,7 @@ const startRecording = async (tab) => {
     chrome.runtime.sendMessage({
       type: 'start-recording',
       target: 'offscreen',
+      token: token,
       data: streamId
     });
     chrome.action.setIcon({ path: 'icons/recording.png' });
@@ -105,5 +166,23 @@ const startRecording = async (tab) => {
 }
 
 chrome.action.onClicked.addListener(async (tab) => {
-  await startRecording(tab);
+  if(tab.url.startsWith('chrome-extension://') || tab.url.startsWith('chrome://')) {
+    return;
+  }
+  currentTab = tab;
+  if(token) {
+    await startRecording(tab);
+  } else {
+    await openAuthTab()
+  }
+});
+
+chrome.tabs.onActivated.addListener(async (activeInfo) => {
+  chrome.tabs.get(activeInfo.tabId, async (tab) => {
+    const currentUrl = tab.url;
+    const isMatch = !!urls.find(u => currentUrl.includes(u))
+    if(isMatch) {
+      await openFile(['alert.js'], tab)
+    }
+  });
 });
